@@ -4,10 +4,19 @@ import(
 	"net/http"
 	"log"
 	"sync/atomic"
+	"os"
+	"database/sql"
+
+	"github.com/314159otr/Chirpy/internal/database"
+
+	"github.com/joho/godotenv"
+
+	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	db             *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -19,8 +28,22 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 
 func main() {
 	const port = "8080"
+
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		log.Fatal("missing DB_URL")
+	}
+
+	dbConn, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("Error opening the database %w\n", err)
+	}
+
+	dbQueries := database.New(dbConn)
 	apiCfg := apiConfig{
 		fileserverHits: atomic.Int32{},
+		db:             dbQueries,
 	}
 	serveMux := http.NewServeMux()
 
@@ -38,8 +61,7 @@ func main() {
 		Handler: serveMux,
 	}
 	log.Printf("Starting the server on port: %s\n", port)
-	err := server.ListenAndServe()
-	if err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
