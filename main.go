@@ -5,6 +5,7 @@ import(
 	"log"
 	"sync/atomic"
 	"fmt"
+	"encoding/json"
 )
 
 type apiConfig struct {
@@ -19,7 +20,10 @@ func main() {
 	serveMux := http.NewServeMux()
 
 	serveMux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
+
 	serveMux.HandleFunc("GET /api/healthz", handlerReadiness)
+	serveMux.HandleFunc("POST /api/validate_chirp", handlerValidateChirp)
+
 	serveMux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 	serveMux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
 
@@ -33,6 +37,61 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string, err error) {
+	if err != nil {
+		log.Println(err)
+	}
+	type errorResponse struct {
+		Error string `json:"error"`
+	}
+	respondWithJSON(w, code, errorResponse{
+		Error: msg,
+	})
+}
+
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+
+	response, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Error marshalling JSON %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(code)
+	w.Write(response)
+}
+
+func handlerValidateChirp(w http.ResponseWriter, req * http.Request) {
+	type reqBody struct {
+		Body string `json:"body"`
+	}
+	type responsePayload struct {
+		Valid bool `json:"valid"`
+	}
+
+	defer req.Body.Close()
+
+	decoder := json.NewDecoder(req.Body)
+	data := reqBody{}
+	err := decoder.Decode(&data)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error decoding parameters", err)
+		return
+	}
+
+	if len(data.Body) > 140 {
+		log.Printf("Chirp is too long", data.Body)
+		respondWithError(w, http.StatusBadRequest, "Chirp is too long", nil)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, responsePayload{
+		Valid: true,
+	})
 }
 
 func handlerReadiness(w http.ResponseWriter, req * http.Request) {
