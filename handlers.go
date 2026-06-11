@@ -7,6 +7,7 @@ import(
 	"encoding/json"
 	"strings"
 	"time"
+	"github.com/314159otr/Chirpy/internal/database"
 
 	"github.com/google/uuid"
 )
@@ -19,6 +20,67 @@ func cleanBody(body string, profaneWords map[string]struct{}) string {
 		}
 	}
 	return strings.Join(words, " ")
+}
+
+func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, req * http.Request) {
+	type reqBody struct {
+		Body string `json:"body"`
+		UserID string `json:"user_id"`
+	}
+	type Chirp struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Body      string    `json:"body"`
+		UserID    uuid.UUID `json:"user_id"`
+	}
+
+	defer req.Body.Close()
+
+	decoder := json.NewDecoder(req.Body)
+	data := reqBody{}
+	if err := decoder.Decode(&data); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error decoding parameters", err)
+		return
+	}
+
+	if len(data.Body) > 140 {
+		log.Printf("Chirp is too long", data.Body)
+		respondWithError(w, http.StatusBadRequest, "Chirp is too long", nil)
+		return
+	}
+
+	profaneWords := map[string]struct{}{
+		"kerfuffle": {},
+		"sharbert":  {},
+		"fornax":    {},
+	}
+	cleaned := cleanBody(data.Body, profaneWords)
+	userID, err := uuid.Parse(data.UserID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid uuid", err)
+		return
+	}
+
+	createChirpParams := database.CreateChirpParams{
+		Body:   cleaned,
+		UserID: userID,
+	}
+	chirp, err := cfg.db.CreateChirp(req.Context(), createChirpParams)
+
+	if err != nil {
+		log.Printf("error creating chirp %v\n", data)
+		respondWithError(w, http.StatusBadRequest, "error creating chirp", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, Chirp{
+		ID: chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body: chirp.Body,
+		UserID: chirp.UserID,
+	})
 }
 
 func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, req * http.Request) {
@@ -51,40 +113,6 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, req * http.Request) {
 			CreatedAt: user.CreatedAt,
 			UpdatedAt: user.UpdatedAt,
 			Email:     user.Email,
-	})
-}
-
-func handlerValidateChirp(w http.ResponseWriter, req * http.Request) {
-	type reqBody struct {
-		Body string `json:"body"`
-	}
-	type responsePayload struct {
-		CleanedBody string `json:"cleaned_body"`
-	}
-
-	defer req.Body.Close()
-
-	decoder := json.NewDecoder(req.Body)
-	data := reqBody{}
-	if err := decoder.Decode(&data); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error decoding parameters", err)
-		return
-	}
-
-	if len(data.Body) > 140 {
-		log.Printf("Chirp is too long", data.Body)
-		respondWithError(w, http.StatusBadRequest, "Chirp is too long", nil)
-		return
-	}
-
-	profaneWords := map[string]struct{}{
-		"kerfuffle": {},
-		"sharbert":  {},
-		"fornax":    {},
-	}
-	cleaned := cleanBody(data.Body, profaneWords)
-	respondWithJSON(w, http.StatusOK, responsePayload{
-		CleanedBody: cleaned,
 	})
 }
 
