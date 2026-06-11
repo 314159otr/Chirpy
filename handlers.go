@@ -6,6 +6,9 @@ import(
 	"fmt"
 	"encoding/json"
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 func cleanBody(body string, profaneWords map[string]struct{}) string {
@@ -16,6 +19,39 @@ func cleanBody(body string, profaneWords map[string]struct{}) string {
 		}
 	}
 	return strings.Join(words, " ")
+}
+
+func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, req * http.Request) {
+	type reqBody struct {
+		Email string `json:"email"`
+	}
+	type User struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+	}
+
+	defer req.Body.Close()
+
+	decoder := json.NewDecoder(req.Body)
+	data := reqBody{}
+	if err := decoder.Decode(&data); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error decoding parameters", err)
+		return
+	}
+
+	user, err := cfg.db.CreateUser(req.Context(), data.Email)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error creating user", err)
+		return
+	}
+	respondWithJSON(w, http.StatusCreated, User{
+			ID:        user.ID,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+			Email:     user.Email,
+	})
 }
 
 func handlerValidateChirp(w http.ResponseWriter, req * http.Request) {
@@ -30,8 +66,7 @@ func handlerValidateChirp(w http.ResponseWriter, req * http.Request) {
 
 	decoder := json.NewDecoder(req.Body)
 	data := reqBody{}
-	err := decoder.Decode(&data)
-	if err != nil {
+	if err := decoder.Decode(&data); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error decoding parameters", err)
 		return
 	}
@@ -73,7 +108,16 @@ func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, req * http.Request) 
 }
 
 func (cfg *apiConfig) handlerReset(w http.ResponseWriter, req * http.Request) {
+	if cfg.platform != "dev" {
+		respondWithError(w, http.StatusForbidden, "you are not on DEV", nil)
+		return
+	}
 	cfg.fileserverHits.Store(0)
+	err := cfg.db.DeleteUsers(req.Context())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error deleting users", err)
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Hits reseted to 0"))
