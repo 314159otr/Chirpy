@@ -4,6 +4,8 @@ import(
 	"net/http"
 	"encoding/json"
 	"time"
+	"database/sql"
+
 	"github.com/314159otr/Chirpy/internal/database"
 
 	"github.com/google/uuid"
@@ -72,7 +74,7 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, req * http.Request) {
 func (cfg *apiConfig) handlerChirpsGet(w http.ResponseWriter, req * http.Request) {
 	chirps, err := cfg.db.GetChirps(req.Context())
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "error getting chirps", err)
+		respondWithError(w, http.StatusInternalServerError, "error getting chirps", err)
 		return
 	}
 	var responseChirps []Chirp
@@ -86,4 +88,29 @@ func (cfg *apiConfig) handlerChirpsGet(w http.ResponseWriter, req * http.Request
 		})
 	}
 	respondWithJSON(w, http.StatusOK, responseChirps)
+}
+
+func (cfg *apiConfig) handlerChirpsGetByID(w http.ResponseWriter, req * http.Request) {
+	chirpID, err := uuid.Parse(req.PathValue("chirpID"))
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid uuid", err)
+		return
+	}
+
+	chirp, err := cfg.db.GetChirpByID(req.Context(), chirpID)
+	if err == sql.ErrNoRows {
+		respondWithError(w, http.StatusNotFound, "error getting chirp", err)
+		return
+	}
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error getting chirp", err)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, Chirp{
+		ID: chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body: chirp.Body,
+		UserID: chirp.UserID,
+	})
 }
