@@ -6,8 +6,12 @@ import(
 	"encoding/json"
 	"strings"
 	"time"
+	"database/sql"
 
 	"github.com/google/uuid"
+
+	"github.com/314159otr/Chirpy/internal/auth"
+	"github.com/314159otr/Chirpy/internal/database"
 )
 
 func cleanBody(body string, profaneWords map[string]struct{}) string {
@@ -20,16 +24,57 @@ func cleanBody(body string, profaneWords map[string]struct{}) string {
 	return strings.Join(words, " ")
 }
 
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
+}
 
-func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, req * http.Request) {
+func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req * http.Request) {
 	type reqBody struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
-	type User struct {
-		ID        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Email     string    `json:"email"`
+	defer req.Body.Close()
+
+	decoder := json.NewDecoder(req.Body)
+	data := reqBody{}
+	if err := decoder.Decode(&data); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error decoding parameters", err)
+		return
+	}
+
+	user, err := cfg.db.GetUserByEmail(req.Context(), data.Email)
+	if err == sql.ErrNoRows {
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password", err)
+		return
+	}
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error getting user", err)
+		return
+	}
+	matched, err := auth.CheckPasswordHash(data.Password, user.HashedPassword)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error checking password", err)
+		return
+	}
+	if matched == false {
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password", err)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, User{
+			ID:        user.ID,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+			Email:     user.Email,
+	})
+}
+
+func (cfg *apiConfig) handlerUsersPost(w http.ResponseWriter, req * http.Request) {
+	type reqBody struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	defer req.Body.Close()
@@ -41,7 +86,17 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, req * http.Request) {
 		return
 	}
 
-	user, err := cfg.db.CreateUser(req.Context(), data.Email)
+	hashedPassword, err := auth.HashPassword(data.Password)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error hashing password", err)
+		return
+	}
+	createUserParams := database.CreateUserParams{
+		Email:          data.Email,
+		HashedPassword: hashedPassword,
+	}
+
+	user, err := cfg.db.CreateUser(req.Context(), createUserParams)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error creating user", err)
 		return
