@@ -29,12 +29,14 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Token     string    `json:"token"`
 }
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req * http.Request) {
 	type reqBody struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email            string `json:"email"`
+		Password         string `json:"password"`
+		ExpiresInSeconds int `json:"expires_in_seconds"`
 	}
 	defer req.Body.Close()
 
@@ -43,6 +45,10 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req * http.Request) {
 	if err := decoder.Decode(&data); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error decoding parameters", err)
 		return
+	}
+
+	if data.ExpiresInSeconds == 0 || data.ExpiresInSeconds > 3600 {
+		data.ExpiresInSeconds = 3600
 	}
 
 	user, err := cfg.db.GetUserByEmail(req.Context(), data.Email)
@@ -63,11 +69,17 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req * http.Request) {
 		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password", err)
 		return
 	}
+	jwt, err := auth.MakeJWT(user.ID, cfg.jwtSecret, time.Duration(data.ExpiresInSeconds) * time.Second)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error making JWT", err)
+		return
+	}
 	respondWithJSON(w, http.StatusOK, User{
 			ID:        user.ID,
 			CreatedAt: user.CreatedAt,
 			UpdatedAt: user.UpdatedAt,
 			Email:     user.Email,
+			Token:     jwt,
 	})
 }
 

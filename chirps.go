@@ -5,8 +5,10 @@ import(
 	"encoding/json"
 	"time"
 	"database/sql"
+	"log"
 
 	"github.com/314159otr/Chirpy/internal/database"
+	"github.com/314159otr/Chirpy/internal/auth"
 
 	"github.com/google/uuid"
 )
@@ -22,9 +24,21 @@ type Chirp struct {
 func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, req * http.Request) {
 	type reqBody struct {
 		Body string `json:"body"`
-		UserID string `json:"user_id"`
 	}
 
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "error getting JWT", err)
+		return
+	}
+
+	log.Printf("token: %v\n", token)
+	log.Printf("jwtSecret: %v\n", cfg.jwtSecret)
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "error validating JWT", err)
+		return
+	}
 	defer req.Body.Close()
 
 	decoder := json.NewDecoder(req.Body)
@@ -45,11 +59,6 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, req * http.Request) {
 		"fornax":    {},
 	}
 	cleaned := cleanBody(data.Body, profaneWords)
-	userID, err := uuid.Parse(data.UserID)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "invalid uuid", err)
-		return
-	}
 
 	createChirpParams := database.CreateChirpParams{
 		Body:   cleaned,
