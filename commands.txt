@@ -1,0 +1,2 @@
+sudo systemctl start postgresql
+goose -dir sql/schema/ postgres postgres://postgres:password@localhost:5432/chirpy up

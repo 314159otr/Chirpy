@@ -25,18 +25,18 @@ func cleanBody(body string, profaneWords map[string]struct{}) string {
 }
 
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Token     string    `json:"token"`
+	ID           uuid.UUID `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Email        string    `json:"email"`
+	Token        string    `json:"token"`
+	RefreshToken string    `json:"refresh_token"`
 }
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req * http.Request) {
 	type reqBody struct {
 		Email            string `json:"email"`
 		Password         string `json:"password"`
-		ExpiresInSeconds int `json:"expires_in_seconds"`
 	}
 	defer req.Body.Close()
 
@@ -45,10 +45,6 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req * http.Request) {
 	if err := decoder.Decode(&data); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error decoding parameters", err)
 		return
-	}
-
-	if data.ExpiresInSeconds == 0 || data.ExpiresInSeconds > 3600 {
-		data.ExpiresInSeconds = 3600
 	}
 
 	user, err := cfg.db.GetUserByEmail(req.Context(), data.Email)
@@ -69,7 +65,18 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req * http.Request) {
 		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password", err)
 		return
 	}
-	jwt, err := auth.MakeJWT(user.ID, cfg.jwtSecret, time.Duration(data.ExpiresInSeconds) * time.Second)
+
+	createRefreshTokenParams := database.CreateRefreshTokenParams {
+		Token:  auth.MakeRefreshToken(),
+		UserID: user.ID,
+	}
+	refreshToken, err := cfg.db.CreateRefreshToken(req.Context(), createRefreshTokenParams)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error creating refresh token", err)
+		return
+	}
+
+	jwt, err := auth.MakeJWT(user.ID, cfg.jwtSecret, time.Hour)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error making JWT", err)
 		return
@@ -80,6 +87,7 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req * http.Request) {
 			UpdatedAt: user.UpdatedAt,
 			Email:     user.Email,
 			Token:     jwt,
+			RefreshToken: refreshToken.Token,
 	})
 }
 
