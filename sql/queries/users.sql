@@ -15,5 +15,11 @@ email = $2
 where id = $3
 returning *;
 
+-- name: UpgradeUserIsChirpyRedByID :exec
+update users
+set updated_at = now(),
+is_chirpy_red = true
+where id = $1;
+
 -- name: DeleteUsers :exec
 delete from users;
