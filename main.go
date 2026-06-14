@@ -19,6 +19,7 @@ type apiConfig struct {
 	db             *database.Queries
 	platform       string
 	jwtSecret      string
+	polkaApiKey    string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -41,6 +42,10 @@ func main() {
 	if jwtSecret == "" {
 		log.Fatal("missing JWT_SECRET")
 	}
+	polkaApiKey := os.Getenv("POLKA_KEY")
+	if polkaApiKey  == "" {
+		log.Fatal("missing POLKA_KEY")
+	}
 
 	dbConn, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -53,6 +58,7 @@ func main() {
 		db:             dbQueries,
 		platform:       platform,
 		jwtSecret:      jwtSecret,
+		polkaApiKey:    polkaApiKey,
 	}
 	serveMux := http.NewServeMux()
 

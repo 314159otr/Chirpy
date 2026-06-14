@@ -6,9 +6,17 @@ import(
 	"database/sql"
 
 	"github.com/google/uuid"
+
+	"github.com/314159otr/Chirpy/internal/auth"
 )
 
 func (cfg *apiConfig) handlerPolkaWebhooks(w http.ResponseWriter, req * http.Request) {
+	apiKey, err := auth.GetAPIKey(req.Header)
+	if err != nil || apiKey != cfg.polkaApiKey {
+		respondWithError(w, http.StatusUnauthorized, "Error getting APIKey", err)
+		return
+	}
+
 	type reqBody struct{
 		Event string `json:"event"`
 		Data  struct{
