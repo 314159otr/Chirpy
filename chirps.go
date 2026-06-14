@@ -5,7 +5,6 @@ import(
 	"encoding/json"
 	"time"
 	"database/sql"
-	"log"
 
 	"github.com/314159otr/Chirpy/internal/database"
 	"github.com/314159otr/Chirpy/internal/auth"
@@ -32,8 +31,6 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, req * http.Request) {
 		return
 	}
 
-	log.Printf("token: %v\n", token)
-	log.Printf("jwtSecret: %v\n", cfg.jwtSecret)
 	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "error validating JWT", err)

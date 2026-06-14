@@ -7,5 +7,13 @@ returning *;
 select * from users
 where email = $1;
 
+-- name: UpdateUserPasswordAndEmail :one
+update users
+set updated_at = now(),
+hashed_password = $1,
+email = $2
+where id = $3
+returning *;
+
 -- name: DeleteUsers :exec
 delete from users;
