@@ -120,3 +120,43 @@ func (cfg *apiConfig) handlerChirpsGetByID(w http.ResponseWriter, req * http.Req
 		UserID: chirp.UserID,
 	})
 }
+
+func (cfg *apiConfig) handlerChirpsDeleteByID(w http.ResponseWriter, req * http.Request) {
+	chirpID, err := uuid.Parse(req.PathValue("chirpID"))
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid uuid", err)
+		return
+	}
+
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "error getting JWT", err)
+		return
+	}
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "error validating JWT", err)
+		return
+	}
+
+	chirp, err := cfg.db.GetChirpByID(req.Context(), chirpID)
+	if err == sql.ErrNoRows {
+		respondWithError(w, http.StatusNotFound, "error getting chirp", err)
+		return
+	}
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error getting chirp", err)
+		return
+	}
+
+	if chirp.UserID != userID {
+		respondWithError(w, http.StatusForbidden, "error you are not the author of the chirp", err)
+		return
+	}
+
+	if err := cfg.db.DeleteChirpByID(req.Context(), chirpID); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error deleting chirp", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
