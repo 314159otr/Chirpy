@@ -5,6 +5,7 @@ import(
 	"encoding/json"
 	"time"
 	"database/sql"
+	"sort"
 
 	"github.com/314159otr/Chirpy/internal/database"
 	"github.com/314159otr/Chirpy/internal/auth"
@@ -94,6 +95,17 @@ func (cfg *apiConfig) handlerChirpsGet(w http.ResponseWriter, req * http.Request
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "error getting chirps", err)
 		return
+	}
+
+	sortParam := req.URL.Query().Get("sort")
+	if sortParam == "desc" {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+		})
+	} else {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].CreatedAt.Before(chirps[j].CreatedAt)
+		})
 	}
 	var responseChirps []Chirp
 	for _, chirp := range chirps {
